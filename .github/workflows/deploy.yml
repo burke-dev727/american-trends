@@ -31,15 +31,17 @@ jobs:
       - run: npm run lint
       - run: npm run build
 
-      - uses: actions/setup-go@v7
+      - uses: actions/setup-java@v4
         with:
-          go-version-file: server/go.mod
-          cache-dependency-path: server/go.sum
-      - name: Go vet and test
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+          cache-dependency-path: |
+            server/**/*.gradle*
+            server/**/gradle-wrapper.properties
+      - name: Test the API
         working-directory: server
-        run: |
-          go vet ./...
-          go test ./...
+        run: ./gradlew test --no-daemon
 
   deploy:
     needs: test
@@ -53,10 +55,14 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: actions/setup-go@v7
+      - uses: actions/setup-java@v4
         with:
-          go-version-file: server/go.mod
-          cache-dependency-path: server/go.sum
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+          cache-dependency-path: |
+            server/**/*.gradle*
+            server/**/gradle-wrapper.properties
 
       - name: Export data snapshot from Databricks
         working-directory: server
@@ -64,7 +70,7 @@ jobs:
           DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
           DATABRICKS_HTTP_PATH: ${{ secrets.DATABRICKS_HTTP_PATH }}
           DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
-        run: go run . export-snapshot ../snapshot.json
+        run: ./gradlew exportSnapshot -Psnapshot=../snapshot.json --no-daemon
 
       - name: Set image name
         id: image

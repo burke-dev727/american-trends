@@ -13,8 +13,12 @@ dist-ssr
 *.local
 .env
 
-# Generated from Databricks by `go run . export-snapshot`
+# Generated from Databricks by `gradlew exportSnapshot`
 snapshot.json
+
+# Gradle
+server/.gradle/
+server/build/
 
 # Databricks bundle deployment state
 .databricks/

@@ -1,0 +1,71 @@
+plugins {
+    id 'java'
+    id 'org.springframework.boot' version '3.5.16'
+    id 'io.spring.dependency-management' version '1.1.7'
+}
+
+group = 'energytracker'
+version = '1.0.0'
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.release = 17
+    options.encoding = 'UTF-8'
+    options.compilerArgs.add '-parameters'
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    implementation 'org.springframework.boot:spring-boot-starter-web'
+    implementation 'com.databricks:databricks-jdbc:3.4.4'
+
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation 'org.seleniumhq.selenium:selenium-java:4.35.0'
+}
+
+tasks.withType(Test).configureEach {
+    useJUnitPlatform()
+}
+
+tasks.named('test', Test) {
+    useJUnitPlatform {
+        excludeTags 'ui'
+    }
+}
+
+// Browser tests. Start the site first: npm run dev
+// .\gradlew.bat uiTest
+tasks.register('uiTest', Test) {
+    group = 'verification'
+    description = 'Runs browser tests against a running site (default http://localhost:5173).'
+    testClassesDirs = sourceSets.test.output.classesDirs
+    classpath = sourceSets.test.runtimeClasspath
+    useJUnitPlatform {
+        includeTags 'ui'
+    }
+    def baseUrl = findProperty('uiBaseUrl') ?: 'http://localhost:5173'
+    systemProperty 'ui.baseUrl', baseUrl
+    systemProperty 'ui.headless', findProperty('uiHeadless') ?: 'false'
+}
+
+tasks.named('bootJar', org.springframework.boot.gradle.tasks.bundling.BootJar) {
+    archiveFileName = 'energy-api.jar'
+}
+
+// CI exports the gold tables before the image build: ./gradlew exportSnapshot -Psnapshot=../snapshot.json
+tasks.register('exportSnapshot', JavaExec) {
+    group = 'application'
+    description = 'Export Databricks gold tables to a snapshot file.'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'energytracker.EnergyTrackerApplication'
+    workingDir = layout.projectDirectory.asFile
+    def snapshotPath = findProperty('snapshot') ?: 'snapshot.json'
+    args 'export-snapshot', snapshotPath
+}

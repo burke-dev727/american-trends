@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import App from './App.tsx';
 import { DataCentersPage } from './DataCentersPage.tsx';
+import { DonatePanel } from './DonatePanel.tsx';
 import { HomePage } from './HomePage.tsx';
 import { SiteNav } from './SiteNav.tsx';
 import { dataCentersPath, electricityPath, usePathname } from './navigation';
@@ -27,6 +28,10 @@ export function Site() {
       ) : (
         <HomePage />
       )}
+      <footer className="site-footer">
+        <p>© {new Date().getFullYear()} Burke-Dev</p>
+      </footer>
+      <DonatePanel />
     </>
   );
 }

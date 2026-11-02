@@ -18,11 +18,12 @@ An interactive dashboard showing how the United States has generated its electri
 | Layer | Technologies |
 | --- | --- |
 | Frontend | React 19, TypeScript, Vite, Chart.js (react-chartjs-2), react-markdown, Oxlint |
-| Backend | Go (standard library `net/http`), Databricks SQL driver |
+| Backend | Java 17, Spring Boot 3.5, Gradle, Databricks JDBC |
 | Data pipeline | Databricks (Python notebooks, Spark SQL, Unity Catalog, Asset Bundles) |
 | AI | OpenAI Responses API with function calling, streamed over server-sent events |
 | Hosting | Docker, Azure Container Apps, GitHub Container Registry |
 | CI/CD | GitHub Actions with OpenID Connect sign-in to Azure |
+| Tests | JUnit 5, Selenium |
 | Data source | [EIA Open Data API](https://www.eia.gov/opendata/) (electricity generation and STEO) |
 
 ## How it works
@@ -31,7 +32,7 @@ An interactive dashboard showing how the United States has generated its electri
 flowchart LR
     EIA[EIA Open Data API] -->|monthly job| DBX[Databricks<br/>bronze → silver → gold]
     DBX -->|export in CI| SNAP[snapshot.json]
-    SNAP --> IMG[Docker image<br/>Go server + React build]
+    SNAP --> IMG[Docker image<br/>Java server + React build]
     IMG --> ACA[Azure Container Apps]
     ACA --> Browser
     Browser -->|chat| ACA
@@ -50,9 +51,9 @@ A Databricks job (`databricks/`), deployed as an Asset Bundle, runs on the 20th 
 
 Rolling averages and year-over-year changes are computed across actual and forecast months together, so the lines continue smoothly into the forecast.
 
-### API server (Go)
+### API server (Java)
 
-The server in `server/` serves the JSON API and, in production, the built frontend. It reads data through a small interface with three interchangeable backends, chosen by `DATA_SOURCE`:
+The Spring Boot app in `server/` serves the JSON API and, in production, the built frontend. It reads data through one interface with three interchangeable backends, chosen by `DATA_SOURCE`:
 
 - `eia`: calls the EIA API live (energy mix only, with an in-memory cache).
 - `databricks`: queries the gold tables through a Databricks SQL warehouse.
@@ -86,56 +87,108 @@ Safeguards keep a public deployment from running up costs: a per-visitor rate li
 
 Pushing to `main` runs the GitHub Actions workflow in `.github/workflows/deploy.yml`:
 
-1. **Test:** lint and build the frontend; `go vet` and `go test` the server.
+1. **Test:** lint and build the frontend; `./gradlew test` the server.
 2. **Snapshot:** export the Databricks gold tables to `snapshot.json`.
-3. **Build:** a multi-stage Docker build compiles the React app and the Go server into a roughly 25 MB distroless image, pushed to GitHub Container Registry.
+3. **Build:** a multi-stage Docker build compiles the React app and the Spring Boot server into one image, pushed to GitHub Container Registry. The Container App runs it on a Java 17 JRE.
 4. **Deploy:** sign in to Azure with OpenID Connect (no stored Azure passwords) and roll the Container App to the new image.
 
 The workflow also runs on the 21st of each month, the day after the Databricks job, so the live site picks up new data automatically. The Container App scales to zero when idle, which keeps hosting within Azure's free monthly allowance. The OpenAI key is stored as a Container App secret, not in the repository or image.
 
 ## Running locally
 
-**Prerequisites:** Node.js 24+, Go 1.27+, and a free [EIA API key](https://www.eia.gov/opendata/register.php).
+The dashboard is the Vite app at <http://localhost:5173>. It calls the Spring Boot API on port 8080, so start the API first and leave it running.
 
-1. Configure the server:
+**Prerequisites:** JDK 17, Node.js 24, and a free [EIA API key](https://www.eia.gov/opendata/register.php).
+
+1. Create `server/.env` from the example and set `EIA_API_KEY`.
+
+   Windows (PowerShell), from the repository root:
+
+   ```powershell
+   Copy-Item server\.env.example server\.env
+   ```
+
+   macOS and Linux:
 
    ```sh
    cp server/.env.example server/.env
    ```
 
-   Then edit `server/.env`. With only `EIA_API_KEY` set, the dashboard shows the monthly mix from the live EIA API. Trends, milestones, the forecast, and the assistant need `DATA_SOURCE=databricks` (with the Databricks settings) or `DATA_SOURCE=snapshot`, and the assistant also needs `OPENAI_API_KEY`.
+   Leave `DATA_SOURCE=eia` to load the monthly mix from the live EIA API. Trends, milestones, the forecast, and Ask AI need `DATA_SOURCE=databricks` (with the Databricks settings) or `DATA_SOURCE=snapshot`. Ask AI also needs `OPENAI_API_KEY`.
 
-2. Start the API server (port 8080):
+2. Start the API. The first run downloads Gradle and the project dependencies.
+
+   Windows:
+
+   ```powershell
+   cd server
+   .\gradlew.bat bootRun
+   ```
+
+   macOS and Linux:
 
    ```sh
    cd server
-   go run .
+   ./gradlew bootRun
    ```
 
-3. In another terminal, start the frontend (Vite proxies `/api` to the server):
+   Wait until the log says the API is listening on <http://localhost:8080>. `GET /healthz` returns `ok`.
+
+3. In a second terminal, from the repository root, start the frontend. Vite proxies `/api` to port 8080.
 
    ```sh
    npm install
    npm run dev
    ```
 
-To create a snapshot from Databricks and run the production image locally:
+   Open <http://localhost:5173>.
+
+### Snapshot and the production image
+
+Export the Databricks gold tables, then build the image that serves both the API and the React app:
 
 ```sh
 cd server
-go run . export-snapshot ../snapshot.json
+./gradlew exportSnapshot -Psnapshot=../snapshot.json
 cd ..
 docker build -t energy-tracker .
 docker run -p 8080:8080 -e OPENAI_API_KEY=... energy-tracker
 ```
+
+On Windows, run `.\gradlew.bat exportSnapshot -Psnapshot=..\snapshot.json` from `server`. The container listens on <http://localhost:8080> and does not need the Vite dev server.
 
 ### Tests
 
 ```sh
 npm run lint
 npm run build
-cd server && go vet ./... && go test ./...
+cd server && ./gradlew test
 ```
+
+On Windows, run `.\gradlew.bat test` from `server`.
+
+### Browser tests (Selenium)
+
+`./gradlew test` does not open a browser. The Selenium tests are in `server/src/test/java/energytracker/ui` and run as a separate Gradle task. Chrome must be installed, and the Vite app must already be running at <http://localhost:5173>.
+
+The Donate test also needs `VITE_PAYPAL_DONATE_URL` in a `.env` file at the repository root (see `.env.example`). Restart `npm run dev` after setting it, so **Continue with PayPal** is a link.
+
+Windows, from `server`:
+
+```powershell
+.\gradlew.bat uiTest
+```
+
+macOS and Linux:
+
+```sh
+cd server
+./gradlew uiTest
+```
+
+`DonateUiTest` opens the home page, clicks **Donate**, chooses **$25**, and checks that **Continue with PayPal** points at PayPal with `amount=25`. It does not complete a payment.
+
+Pass `-PuiHeadless=true` to run Chrome without a window. Pass `-PuiBaseUrl=http://localhost:5173` to point the test at a different site URL.
 
 ## Project structure
 
@@ -145,12 +198,11 @@ cd server && go vet ./... && go test ./...
 │   ├── TrendsChart.tsx   Trends chart and milestones
 │   ├── ChatPanel.tsx     AI assistant panel
 │   └── services/         API clients
-├── server/               Go API server
-│   ├── handlers.go       HTTP routes
-│   ├── eia.go, databricks.go, snapshot.go   Data sources
-│   ├── chat.go           Assistant: streaming and the tool loop
-│   ├── chat_tools.go     Tools the model can call
-│   └── openai.go         OpenAI Responses API client
+├── server/               Java API (Spring Boot, Gradle)
+│   └── src/main/java/energytracker/
+│       ├── web/          HTTP routes and frontend hosting
+│       ├── energy/       EIA, Databricks, and snapshot data sources
+│       └── chat/         Assistant: streaming, tools, and OpenAI
 ├── databricks/           Databricks Asset Bundle: ETL job and notebooks
 ├── Dockerfile            Production image
 └── .github/workflows/    CI/CD pipeline

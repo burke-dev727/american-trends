@@ -1,0 +1,25 @@
+server:
+  port: ${PORT:8080}
+
+spring:
+  web:
+    resources:
+      # The API serves STATIC_DIR itself, including the SPA fallback for client routes.
+      add-mappings: false
+
+app:
+  data-source: ${DATA_SOURCE:eia}
+  eia-api-key: ${EIA_API_KEY:}
+  snapshot-path: ${SNAPSHOT_PATH:snapshot.json}
+  static-dir: ${STATIC_DIR:}
+  trust-proxy-headers: ${TRUST_PROXY_HEADERS:false}
+  databricks:
+    host: ${DATABRICKS_HOST:}
+    http-path: ${DATABRICKS_HTTP_PATH:}
+    token: ${DATABRICKS_TOKEN:}
+    schema: ${DATABRICKS_SCHEMA:workspace.energy}
+  openai:
+    api-key: ${OPENAI_API_KEY:}
+    base-url: ${OPENAI_BASE_URL:https://api.openai.com/v1}
+    model: ${OPENAI_MODEL:gpt-6.1-sol}
+    reasoning-effort: ${OPENAI_REASONING_EFFORT:low}

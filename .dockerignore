@@ -6,3 +6,5 @@ node_modules
 dist
 databricks
 **/*.log
+server/build
+server/.gradle
